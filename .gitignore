@@ -43,6 +43,9 @@ htmlcov/
 # Type checking
 .mypy_cache/
 
+# Linting
+.ruff_cache/
+
 # Jupyter
 .ipynb_checkpoints/
 
@@ -54,6 +57,10 @@ Thumbs.db
 *.log
 /tmp/
 screenshots/
+
+# Environment (keep .env.example)
+.env
+.env.local
 
 # Keep old files during transition
 call_model.py
