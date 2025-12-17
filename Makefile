@@ -8,7 +8,7 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-.PHONY: gen install dev run test check fix lint clean help
+.PHONY: gen install dev run test check fix lint clean help adb-info realtap realtap-exact adb-tap-compare
 
 name := "phone-agent"
 
@@ -90,6 +90,60 @@ check-deploy-cn:
 check-deploy-en:
 	$(HIDE)uv run python scripts/check_deployment_en.py
 
+# ============================================================
+# ADB Debug Tools (for bypassing anti-bot detection)
+# ============================================================
+
+# Show device touch input info
+adb-info:
+	$(HIDE)uv run python scripts/real_tap.py --info
+
+# Perform a realistic tap (usage: make realtap X=500 Y=800)
+realtap:
+ifndef X
+	@echo "❌ Usage: make realtap X=<x> Y=<y>"
+	@echo "   Example: make realtap X=500 Y=800"
+	@exit 1
+endif
+ifndef Y
+	@echo "❌ Usage: make realtap X=<x> Y=<y>"
+	@echo "   Example: make realtap X=500 Y=800"
+	@exit 1
+endif
+	@echo "👆 Performing realistic tap at ($(X), $(Y))..."
+	$(HIDE)uv run python scripts/real_tap.py --x $(X) --y $(Y) -v
+
+# Perform a realistic tap without humanization
+realtap-exact:
+ifndef X
+	@echo "❌ Usage: make realtap-exact X=<x> Y=<y>"
+	@exit 1
+endif
+ifndef Y
+	@echo "❌ Usage: make realtap-exact X=<x> Y=<y>"
+	@exit 1
+endif
+	$(HIDE)uv run python scripts/real_tap.py --x $(X) --y $(Y) -v --no-humanize
+
+# Compare normal tap vs real tap (for debugging)
+adb-tap-compare:
+ifndef X
+	@echo "❌ Usage: make adb-tap-compare X=<x> Y=<y>"
+	@exit 1
+endif
+ifndef Y
+	@echo "❌ Usage: make adb-tap-compare X=<x> Y=<y>"
+	@exit 1
+endif
+	@echo "📊 Comparing tap methods at ($(X), $(Y))..."
+	@echo ""
+	@echo "1️⃣  Normal 'input tap' (may be detected):"
+	adb shell input tap $(X) $(Y)
+	@sleep 2
+	@echo ""
+	@echo "2️⃣  Real tap via sendevent (harder to detect):"
+	$(HIDE)uv run python scripts/real_tap.py --x $(X) --y $(Y) -v
+
 # Sync with upstream repository
 upstream-sync:
 	$(HIDE)git fetch upstream
@@ -140,6 +194,12 @@ help:
 	@echo "Deployment Check:"
 	@echo "  make check-deploy-cn  - Check deployment (Chinese)"
 	@echo "  make check-deploy-en  - Check deployment (English)"
+	@echo ""
+	@echo "ADB Debug (bypass anti-bot detection):"
+	@echo "  make adb-info           - Show device touch input info"
+	@echo "  make realtap X= Y=      - Realistic tap (e.g. make realtap X=500 Y=800)"
+	@echo "  make realtap-exact X= Y=- Tap without humanization"
+	@echo "  make adb-tap-compare X= Y= - Compare normal vs real tap"
 	@echo ""
 	@echo "Git:"
 	@echo "  make upstream-sync    - Sync with upstream (merge)"

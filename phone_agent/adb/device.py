@@ -1,12 +1,152 @@
 """Device control utilities for Android automation."""
 
 import os
+import random
 import subprocess
 import time
 from typing import List, Optional, Tuple
 
 from phone_agent.config.apps import APP_PACKAGES
 from phone_agent.config.timing import TIMING_CONFIG
+
+# Cache for device info
+_device_cache: dict = {}
+
+
+def _is_device_rooted(device_id: str | None = None) -> bool:
+    """Check if device has root access."""
+    cache_key = f"rooted_{device_id}"
+    if cache_key in _device_cache:
+        return _device_cache[cache_key]
+
+    adb_prefix = _get_adb_prefix(device_id)
+    result = subprocess.run(
+        adb_prefix + ["shell", "su", "-c", "id"], capture_output=True, text=True
+    )
+    rooted = result.returncode == 0 and "uid=0" in result.stdout
+    _device_cache[cache_key] = rooted
+    return rooted
+
+
+def _get_touch_device(device_id: str | None = None) -> str | None:
+    """Find the touch input device path."""
+    cache_key = f"touch_device_{device_id}"
+    if cache_key in _device_cache:
+        return _device_cache[cache_key]
+
+    adb_prefix = _get_adb_prefix(device_id)
+    result = subprocess.run(
+        adb_prefix + ["shell", "getevent", "-pl"], capture_output=True, text=True
+    )
+
+    current_device = None
+    for line in result.stdout.split("\n"):
+        if line.startswith("add device"):
+            parts = line.split(":")
+            if len(parts) >= 2:
+                current_device = parts[1].strip()
+        elif "ABS_MT_POSITION_X" in line and current_device:
+            _device_cache[cache_key] = current_device
+            return current_device
+
+    return None
+
+
+def _get_screen_resolution(device_id: str | None = None) -> tuple[int, int]:
+    """Get device screen resolution."""
+    cache_key = f"resolution_{device_id}"
+    if cache_key in _device_cache:
+        return _device_cache[cache_key]
+
+    adb_prefix = _get_adb_prefix(device_id)
+    result = subprocess.run(adb_prefix + ["shell", "wm", "size"], capture_output=True, text=True)
+
+    for line in result.stdout.split("\n"):
+        if "size" in line.lower():
+            parts = line.split(":")
+            if len(parts) >= 2:
+                size = parts[1].strip()
+                w, h = size.split("x")
+                resolution = (int(w), int(h))
+                _device_cache[cache_key] = resolution
+                return resolution
+
+    return (1080, 2400)
+
+
+def _sendevent_tap(
+    x: int,
+    y: int,
+    device_id: str | None = None,
+    humanize: bool = True,
+) -> bool:
+    """Perform a realistic tap using sendevent (requires root)."""
+    touch_device = _get_touch_device(device_id)
+    if not touch_device:
+        return False
+
+    screen_w, screen_h = _get_screen_resolution(device_id)
+
+    # Add human-like variations
+    if humanize:
+        x += random.randint(-3, 3)
+        y += random.randint(-3, 3)
+        pressure = random.randint(180, 255)
+        touch_major = random.randint(80, 150)
+    else:
+        pressure = 255
+        touch_major = 100
+
+    # Event constants
+    EV_SYN, EV_KEY, EV_ABS = 0, 1, 3
+    SYN_REPORT, BTN_TOUCH = 0, 330
+    ABS_MT_TRACKING_ID, ABS_MT_POSITION_X, ABS_MT_POSITION_Y = 57, 53, 54
+    ABS_MT_TOUCH_MAJOR, ABS_MT_PRESSURE = 48, 58
+
+    # Build event sequence
+    events = [
+        f"sendevent {touch_device} {EV_ABS} {ABS_MT_TRACKING_ID} 0",
+        f"sendevent {touch_device} {EV_ABS} {ABS_MT_POSITION_X} {x}",
+        f"sendevent {touch_device} {EV_ABS} {ABS_MT_POSITION_Y} {y}",
+        f"sendevent {touch_device} {EV_ABS} {ABS_MT_TOUCH_MAJOR} {touch_major}",
+        f"sendevent {touch_device} {EV_ABS} {ABS_MT_PRESSURE} {pressure}",
+        f"sendevent {touch_device} {EV_KEY} {BTN_TOUCH} 1",
+        f"sendevent {touch_device} {EV_SYN} {SYN_REPORT} 0",
+    ]
+
+    # Add micro movement for realism
+    if humanize and random.random() > 0.3:
+        micro_x = x + random.randint(-2, 2)
+        micro_y = y + random.randint(-2, 2)
+        events.extend(
+            [
+                f"sendevent {touch_device} {EV_ABS} {ABS_MT_POSITION_X} {micro_x}",
+                f"sendevent {touch_device} {EV_ABS} {ABS_MT_POSITION_Y} {micro_y}",
+                f"sendevent {touch_device} {EV_SYN} {SYN_REPORT} 0",
+            ]
+        )
+
+    # Touch up
+    events.extend(
+        [
+            f"sendevent {touch_device} {EV_ABS} {ABS_MT_TRACKING_ID} -1",
+            f"sendevent {touch_device} {EV_KEY} {BTN_TOUCH} 0",
+            f"sendevent {touch_device} {EV_SYN} {SYN_REPORT} 0",
+        ]
+    )
+
+    shell_script = " && ".join(events)
+
+    # Random pre-tap delay
+    if humanize:
+        time.sleep(random.uniform(0.05, 0.15))
+
+    adb_prefix = _get_adb_prefix(device_id)
+    result = subprocess.run(
+        adb_prefix + ["shell", "su", "-c", f"'{shell_script}'"], capture_output=True, text=True
+    )
+
+    return result.returncode == 0
 
 
 def get_current_app(device_id: str | None = None) -> str:
@@ -37,7 +177,11 @@ def get_current_app(device_id: str | None = None) -> str:
 
 
 def tap(
-    x: int, y: int, device_id: str | None = None, delay: float | None = None
+    x: int,
+    y: int,
+    device_id: str | None = None,
+    delay: float | None = None,
+    use_sendevent: bool = True,
 ) -> None:
     """
     Tap at the specified coordinates.
@@ -47,21 +191,24 @@ def tap(
         y: Y coordinate.
         device_id: Optional ADB device ID.
         delay: Delay in seconds after tap. If None, uses configured default.
+        use_sendevent: If True and device is rooted, use sendevent for anti-detection.
     """
     if delay is None:
         delay = TIMING_CONFIG.device.default_tap_delay
 
-    adb_prefix = _get_adb_prefix(device_id)
+    # Try sendevent method if device is rooted (better anti-detection)
+    if use_sendevent and _is_device_rooted(device_id):
+        if _sendevent_tap(x, y, device_id, humanize=True):
+            time.sleep(delay)
+            return
 
-    subprocess.run(
-        adb_prefix + ["shell", "input", "tap", str(x), str(y)], capture_output=True
-    )
+    # Fallback to regular input tap
+    adb_prefix = _get_adb_prefix(device_id)
+    subprocess.run(adb_prefix + ["shell", "input", "tap", str(x), str(y)], capture_output=True)
     time.sleep(delay)
 
 
-def double_tap(
-    x: int, y: int, device_id: str | None = None, delay: float | None = None
-) -> None:
+def double_tap(x: int, y: int, device_id: str | None = None, delay: float | None = None) -> None:
     """
     Double tap at the specified coordinates.
 
@@ -76,13 +223,9 @@ def double_tap(
 
     adb_prefix = _get_adb_prefix(device_id)
 
-    subprocess.run(
-        adb_prefix + ["shell", "input", "tap", str(x), str(y)], capture_output=True
-    )
+    subprocess.run(adb_prefix + ["shell", "input", "tap", str(x), str(y)], capture_output=True)
     time.sleep(TIMING_CONFIG.device.double_tap_interval)
-    subprocess.run(
-        adb_prefix + ["shell", "input", "tap", str(x), str(y)], capture_output=True
-    )
+    subprocess.run(adb_prefix + ["shell", "input", "tap", str(x), str(y)], capture_output=True)
     time.sleep(delay)
 
 
@@ -109,8 +252,7 @@ def long_press(
     adb_prefix = _get_adb_prefix(device_id)
 
     subprocess.run(
-        adb_prefix
-        + ["shell", "input", "swipe", str(x), str(y), str(x), str(y), str(duration_ms)],
+        adb_prefix + ["shell", "input", "swipe", str(x), str(y), str(x), str(y), str(duration_ms)],
         capture_output=True,
     )
     time.sleep(delay)
@@ -178,9 +320,7 @@ def back(device_id: str | None = None, delay: float | None = None) -> None:
 
     adb_prefix = _get_adb_prefix(device_id)
 
-    subprocess.run(
-        adb_prefix + ["shell", "input", "keyevent", "4"], capture_output=True
-    )
+    subprocess.run(adb_prefix + ["shell", "input", "keyevent", "4"], capture_output=True)
     time.sleep(delay)
 
 
@@ -197,15 +337,11 @@ def home(device_id: str | None = None, delay: float | None = None) -> None:
 
     adb_prefix = _get_adb_prefix(device_id)
 
-    subprocess.run(
-        adb_prefix + ["shell", "input", "keyevent", "KEYCODE_HOME"], capture_output=True
-    )
+    subprocess.run(adb_prefix + ["shell", "input", "keyevent", "KEYCODE_HOME"], capture_output=True)
     time.sleep(delay)
 
 
-def launch_app(
-    app_name: str, device_id: str | None = None, delay: float | None = None
-) -> bool:
+def launch_app(app_name: str, device_id: str | None = None, delay: float | None = None) -> bool:
     """
     Launch an app by name.
 

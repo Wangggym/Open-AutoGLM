@@ -29,7 +29,7 @@ APP_PACKAGES: dict[str, str] = {
     "12306": "com.MobileTicket",
     "去哪儿": "com.Qunar",
     "去哪儿旅行": "com.Qunar",
-    "滴滴出行": "com.sdu.didi.psnger",
+    "滴滴出行": "com.sdu.did.psnger",
     # Video & Entertainment
     "bilibili": "tv.danmaku.bili",
     "抖音": "com.ss.android.ugc.aweme",
@@ -50,6 +50,7 @@ APP_PACKAGES: dict[str, str] = {
     "七猫免费小说": "com.kmxs.reader",
     # Productivity
     "飞书": "com.ss.android.lark",
+    "钉钉": "com.alibaba.android.rimet",
     "QQ邮箱": "com.tencent.androidqqmail",
     # AI & Tools
     "豆包": "com.larus.nova",
