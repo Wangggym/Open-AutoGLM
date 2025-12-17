@@ -8,7 +8,7 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-.PHONY: gen install dev run test check fix lint clean help adb-info realtap realtap-exact adb-tap-compare
+.PHONY: gen install dev run test check fix lint clean help adb-info realtap realtap-exact root-firmware adb-tap-compare
 
 name := "phone-agent"
 
@@ -125,6 +125,39 @@ ifndef Y
 endif
 	$(HIDE)uv run python scripts/real_tap.py --x $(X) --y $(Y) -v --no-humanize
 
+# Root with new firmware (usage: make root-firmware IMG=/path/to/init_boot.img)
+root-firmware:
+ifndef IMG
+	@echo "❌ Usage: make root-firmware IMG=/path/to/init_boot.img"
+	@echo "   Example: make root-firmware IMG=~/Downloads/firmware/init_boot.img"
+	@exit 1
+endif
+	@echo "🔧 Root with new firmware..."
+	@echo ""
+	@echo "Step 1: Pushing $(IMG) to device..."
+	adb push $(IMG) /sdcard/Download/init_boot.img
+	@echo ""
+	@echo "Step 2: Please patch in Magisk:"
+	@echo "   1. Open Magisk App"
+	@echo "   2. Tap 'Install' → 'Select and Patch a File'"
+	@echo "   3. Select /sdcard/Download/init_boot.img"
+	@echo "   4. Wait for patching to complete"
+	@echo ""
+	@read -p "Press Enter after patching is done..."
+	@echo ""
+	@echo "Step 3: Pulling patched image..."
+	adb pull $$(adb shell "ls /sdcard/Download/magisk_patched*.img | tail -1") /tmp/magisk_patched.img
+	@echo ""
+	@echo "Step 4: Flashing..."
+	adb reboot bootloader
+	@sleep 5
+	fastboot flash init_boot_a /tmp/magisk_patched.img
+	@echo ""
+	@echo "Step 5: Rebooting..."
+	fastboot reboot
+	@echo ""
+	@echo "✅ Done! After reboot, verify with: adb shell su -c id"
+
 # Compare normal tap vs real tap (for debugging)
 adb-tap-compare:
 ifndef X
@@ -200,6 +233,7 @@ help:
 	@echo "  make realtap X= Y=      - Realistic tap (e.g. make realtap X=500 Y=800)"
 	@echo "  make realtap-exact X= Y=- Tap without humanization"
 	@echo "  make adb-tap-compare X= Y= - Compare normal vs real tap"
+	@echo "  make root-firmware IMG= - Root with new firmware image"
 	@echo ""
 	@echo "Git:"
 	@echo "  make upstream-sync    - Sync with upstream (merge)"
