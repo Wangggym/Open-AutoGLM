@@ -341,6 +341,143 @@ def home(device_id: str | None = None, delay: float | None = None) -> None:
     time.sleep(delay)
 
 
+def wake_screen(device_id: str | None = None) -> bool:
+    """
+    Wake up the screen if it's off.
+
+    Args:
+        device_id: Optional ADB device ID.
+
+    Returns:
+        True if the screen was woken up (was off), False if already on.
+    """
+    adb_prefix = _get_adb_prefix(device_id)
+
+    # Check if screen is already on
+    result = subprocess.run(
+        adb_prefix + ["shell", "dumpsys", "power"],
+        capture_output=True,
+        text=True,
+    )
+
+    # Check for screen state in dumpsys output
+    is_screen_on = "mWakefulness=Awake" in result.stdout or "Display Power: state=ON" in result.stdout
+
+    if is_screen_on:
+        print("📱 Screen is already on")
+        return False
+
+    # Wake up the screen using KEYCODE_WAKEUP (224)
+    subprocess.run(
+        adb_prefix + ["shell", "input", "keyevent", "KEYCODE_WAKEUP"],
+        capture_output=True,
+    )
+    time.sleep(0.5)
+    print("📱 Screen woken up")
+    return True
+
+
+def sleep_screen(device_id: str | None = None) -> bool:
+    """
+    Turn off the screen (put device to sleep).
+
+    Args:
+        device_id: Optional ADB device ID.
+
+    Returns:
+        True if the screen was turned off (was on), False if already off.
+    """
+    adb_prefix = _get_adb_prefix(device_id)
+
+    # Check if screen is already off
+    result = subprocess.run(
+        adb_prefix + ["shell", "dumpsys", "power"],
+        capture_output=True,
+        text=True,
+    )
+
+    # Check for screen state in dumpsys output
+    is_screen_on = "mWakefulness=Awake" in result.stdout or "Display Power: state=ON" in result.stdout
+
+    if not is_screen_on:
+        print("📱 Screen is already off")
+        return False
+
+    # Turn off the screen using KEYCODE_SLEEP (223)
+    subprocess.run(
+        adb_prefix + ["shell", "input", "keyevent", "KEYCODE_SLEEP"],
+        capture_output=True,
+    )
+    time.sleep(0.3)
+    print("📱 Screen turned off")
+    return True
+
+
+def unlock_screen(device_id: str | None = None, swipe_up: bool = True) -> bool:
+    """
+    Unlock the screen by waking it and performing a swipe gesture.
+
+    This function handles basic lock screens that only require a swipe.
+    For PIN/pattern/password locks, manual intervention is required.
+
+    Args:
+        device_id: Optional ADB device ID.
+        swipe_up: If True, swipe up to unlock. If False, swipe from left to right.
+
+    Returns:
+        True if unlock attempt was made, False if screen was already unlocked.
+    """
+    adb_prefix = _get_adb_prefix(device_id)
+
+    # First, wake up the screen
+    wake_screen(device_id)
+    time.sleep(0.3)
+
+    # Check if device is already unlocked
+    result = subprocess.run(
+        adb_prefix + ["shell", "dumpsys", "window"],
+        capture_output=True,
+        text=True,
+    )
+
+    # Check if lock screen is showing
+    is_locked = "mDreamingLockscreen=true" in result.stdout or "isStatusBarKeyguard=true" in result.stdout
+
+    if not is_locked:
+        print("🔓 Screen is already unlocked")
+        return False
+
+    # Get screen resolution for swipe
+    screen_w, screen_h = _get_screen_resolution(device_id)
+
+    if swipe_up:
+        # Swipe up from bottom center to middle
+        start_x = screen_w // 2
+        start_y = int(screen_h * 0.85)
+        end_x = screen_w // 2
+        end_y = int(screen_h * 0.3)
+    else:
+        # Swipe from left to right
+        start_x = int(screen_w * 0.2)
+        start_y = screen_h // 2
+        end_x = int(screen_w * 0.8)
+        end_y = screen_h // 2
+
+    subprocess.run(
+        adb_prefix + [
+            "shell", "input", "swipe",
+            str(start_x), str(start_y),
+            str(end_x), str(end_y),
+            "300"
+        ],
+        capture_output=True,
+    )
+
+    time.sleep(0.5)
+    print("🔓 Unlock swipe performed")
+    return True
+
+
 def launch_app(app_name: str, device_id: str | None = None, delay: float | None = None) -> bool:
     """
     Launch an app by name.

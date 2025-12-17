@@ -8,7 +8,7 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-.PHONY: gen install dev run test check fix lint clean help adb-info realtap realtap-exact root-firmware adb-tap-compare
+.PHONY: gen install dev run test check fix lint clean help adb-info realtap realtap-exact root-firmware adb-tap-compare wake sleep unlock
 
 name := "phone-agent"
 
@@ -177,6 +177,21 @@ endif
 	@echo "2️⃣  Real tap via sendevent (harder to detect):"
 	$(HIDE)uv run python scripts/real_tap.py --x $(X) --y $(Y) -v
 
+# Wake up the screen
+wake:
+	@echo "📱 Waking up screen..."
+	$(HIDE)uv run python -c "from phone_agent.adb import wake_screen; wake_screen()"
+
+# Turn off the screen
+sleep:
+	@echo "📱 Turning off screen..."
+	$(HIDE)uv run python -c "from phone_agent.adb import sleep_screen; sleep_screen()"
+
+# Unlock the screen (wake + swipe)
+unlock:
+	@echo "🔓 Unlocking screen..."
+	$(HIDE)uv run python -c "from phone_agent.adb import unlock_screen; unlock_screen()"
+
 # Sync with upstream repository
 upstream-sync:
 	$(HIDE)git fetch upstream
@@ -234,6 +249,9 @@ help:
 	@echo "  make realtap-exact X= Y=- Tap without humanization"
 	@echo "  make adb-tap-compare X= Y= - Compare normal vs real tap"
 	@echo "  make root-firmware IMG= - Root with new firmware image"
+	@echo "  make wake               - Wake up the screen"
+	@echo "  make sleep              - Turn off the screen"
+	@echo "  make unlock             - Wake up and unlock screen (swipe)"
 	@echo ""
 	@echo "Git:"
 	@echo "  make upstream-sync    - Sync with upstream (merge)"

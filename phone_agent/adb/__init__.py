@@ -14,8 +14,11 @@ from phone_agent.adb.device import (
     home,
     launch_app,
     long_press,
+    sleep_screen,
     swipe,
     tap,
+    unlock_screen,
+    wake_screen,
 )
 from phone_agent.adb.input import (
     clear_text,
@@ -42,6 +45,9 @@ __all__ = [
     "double_tap",
     "long_press",
     "launch_app",
+    "wake_screen",
+    "sleep_screen",
+    "unlock_screen",
     # Connection management
     "ADBConnection",
     "DeviceInfo",
