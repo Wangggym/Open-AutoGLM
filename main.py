@@ -14,6 +14,7 @@ Environment Variables:
 """
 
 import argparse
+import logging
 import os
 import shutil
 import subprocess
@@ -357,6 +358,13 @@ Examples:
     )
 
     parser.add_argument(
+        "--close",
+        "-C",
+        action="store_true",
+        help="After task finishes successfully, turn off screen (default: keep screen on)",
+    )
+
+    parser.add_argument(
         "--list-apps", action="store_true", help="List supported apps and exit"
     )
 
@@ -451,6 +459,8 @@ def handle_device_commands(args) -> bool:
 def main():
     """Main entry point."""
     args = parse_args()
+    if not args.quiet:
+        logging.basicConfig(level=logging.INFO, format="%(message)s", force=True)
 
     # Handle --list-apps (no system check needed)
     if args.list_apps:
@@ -484,6 +494,7 @@ def main():
         device_id=args.device_id,
         verbose=not args.quiet,
         lang=args.lang,
+        close_screen_after_task=args.close,
     )
 
     # Create agent
@@ -500,6 +511,8 @@ def main():
     print(f"Base URL: {model_config.base_url}")
     print(f"Max Steps: {agent_config.max_steps}")
     print(f"Language: {agent_config.lang}")
+    if agent_config.close_screen_after_task:
+        print("Close screen after task: on (--close)")
 
     # Show device info
     devices = list_devices()

@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from phone_agent.actions import ActionHandler
 from phone_agent.actions.handler import do, finish, parse_action
-from phone_agent.adb import get_current_app, get_screenshot
+from phone_agent.adb import get_current_app, get_screenshot, sleep_screen, unlock_screen
 from phone_agent.config import get_messages, get_system_prompt
 from phone_agent.model import ModelClient, ModelConfig
 from phone_agent.model.client import MessageBuilder
@@ -22,6 +22,7 @@ class AgentConfig:
     lang: str = "cn"
     system_prompt: str | None = None
     verbose: bool = True
+    close_screen_after_task: bool = False  # default: do not turn off screen after task
 
     def __post_init__(self):
         if self.system_prompt is None:
@@ -98,16 +99,22 @@ class PhoneAgent:
         result = self._execute_step(task, is_first=True)
 
         if result.finished:
-            return result.message or "Task completed"
+            return self._complete_run(result.message or "Task completed")
 
         # Continue until finished or max steps reached
         while self._step_count < self.agent_config.max_steps:
             result = self._execute_step(is_first=False)
 
             if result.finished:
-                return result.message or "Task completed"
+                return self._complete_run(result.message or "Task completed")
 
         return "Max steps reached"
+
+    def _complete_run(self, message: str) -> str:
+        """Optionally turn off screen after a finished task, then return the result message."""
+        if self.agent_config.close_screen_after_task:
+            sleep_screen(self.agent_config.device_id, verbose=self.agent_config.verbose)
+        return message
 
     def step(self, task: str | None = None) -> StepResult:
         """
@@ -138,6 +145,9 @@ class PhoneAgent:
     ) -> StepResult:
         """Execute a single step of the agent loop."""
         self._step_count += 1
+
+        # Wake, then swipe keyguard if needed (unlock_screen includes wake_screen)
+        unlock_screen(self.agent_config.device_id, verbose=False)
 
         # Capture current screen state
         screenshot = get_screenshot(self.agent_config.device_id)

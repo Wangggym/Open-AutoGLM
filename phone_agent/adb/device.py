@@ -1,5 +1,6 @@
 """Device control utilities for Android automation."""
 
+import logging
 import os
 import random
 import subprocess
@@ -8,6 +9,8 @@ from typing import List, Optional, Tuple
 
 from phone_agent.config.apps import APP_PACKAGES
 from phone_agent.config.timing import TIMING_CONFIG
+
+_logger = logging.getLogger(__name__)
 
 # Cache for device info
 _device_cache: dict = {}
@@ -198,9 +201,27 @@ def tap(
 
     # Try sendevent method if device is rooted (better anti-detection)
     if use_sendevent and _is_device_rooted(device_id):
+        _logger.info(
+            "[adb.device] tap | try_sendevent | device_id=%s | x=%s | y=%s",
+            device_id or "default",
+            x,
+            y,
+        )
         if _sendevent_tap(x, y, device_id, humanize=True):
+            _logger.info(
+                "[adb.device] tap | sendevent_ok | device_id=%s | x=%s | y=%s",
+                device_id or "default",
+                x,
+                y,
+            )
             time.sleep(delay)
             return
+        _logger.warning(
+            "[adb.device] tap | sendevent_failed | fallback_input_tap | device_id=%s | x=%s | y=%s",
+            device_id or "default",
+            x,
+            y,
+        )
 
     # Fallback to regular input tap
     adb_prefix = _get_adb_prefix(device_id)
@@ -341,12 +362,13 @@ def home(device_id: str | None = None, delay: float | None = None) -> None:
     time.sleep(delay)
 
 
-def wake_screen(device_id: str | None = None) -> bool:
+def wake_screen(device_id: str | None = None, verbose: bool = True) -> bool:
     """
     Wake up the screen if it's off.
 
     Args:
         device_id: Optional ADB device ID.
+        verbose: If True, print when screen was already on; always print when wake was needed.
 
     Returns:
         True if the screen was woken up (was off), False if already on.
@@ -364,7 +386,8 @@ def wake_screen(device_id: str | None = None) -> bool:
     is_screen_on = "mWakefulness=Awake" in result.stdout or "Display Power: state=ON" in result.stdout
 
     if is_screen_on:
-        print("📱 Screen is already on")
+        if verbose:
+            print("📱 Screen is already on")
         return False
 
     # Wake up the screen using KEYCODE_WAKEUP (224)
@@ -377,43 +400,47 @@ def wake_screen(device_id: str | None = None) -> bool:
     return True
 
 
-def sleep_screen(device_id: str | None = None) -> bool:
+def sleep_screen(device_id: str | None = None, verbose: bool = True) -> bool:
     """
     Turn off the screen (put device to sleep).
 
     Args:
         device_id: Optional ADB device ID.
+        verbose: If True, print status messages.
 
     Returns:
         True if the screen was turned off (was on), False if already off.
     """
     adb_prefix = _get_adb_prefix(device_id)
 
-    # Check if screen is already off
     result = subprocess.run(
         adb_prefix + ["shell", "dumpsys", "power"],
         capture_output=True,
         text=True,
     )
 
-    # Check for screen state in dumpsys output
     is_screen_on = "mWakefulness=Awake" in result.stdout or "Display Power: state=ON" in result.stdout
 
     if not is_screen_on:
-        print("📱 Screen is already off")
+        if verbose:
+            print("📱 Screen is already off")
         return False
 
-    # Turn off the screen using KEYCODE_SLEEP (223)
     subprocess.run(
         adb_prefix + ["shell", "input", "keyevent", "KEYCODE_SLEEP"],
         capture_output=True,
     )
     time.sleep(0.3)
-    print("📱 Screen turned off")
+    if verbose:
+        print("📱 Screen turned off")
     return True
 
 
-def unlock_screen(device_id: str | None = None, swipe_up: bool = True) -> bool:
+def unlock_screen(
+    device_id: str | None = None,
+    swipe_up: bool = True,
+    verbose: bool = True,
+) -> bool:
     """
     Unlock the screen by waking it and performing a swipe gesture.
 
@@ -423,41 +450,37 @@ def unlock_screen(device_id: str | None = None, swipe_up: bool = True) -> bool:
     Args:
         device_id: Optional ADB device ID.
         swipe_up: If True, swipe up to unlock. If False, swipe from left to right.
+        verbose: If True, print status; when False, only print if screen was woken from off.
 
     Returns:
         True if unlock attempt was made, False if screen was already unlocked.
     """
     adb_prefix = _get_adb_prefix(device_id)
 
-    # First, wake up the screen
-    wake_screen(device_id)
+    wake_screen(device_id, verbose=verbose)
     time.sleep(0.3)
 
-    # Check if device is already unlocked
     result = subprocess.run(
         adb_prefix + ["shell", "dumpsys", "window"],
         capture_output=True,
         text=True,
     )
 
-    # Check if lock screen is showing
     is_locked = "mDreamingLockscreen=true" in result.stdout or "isStatusBarKeyguard=true" in result.stdout
 
     if not is_locked:
-        print("🔓 Screen is already unlocked")
+        if verbose:
+            print("🔓 Screen is already unlocked")
         return False
 
-    # Get screen resolution for swipe
     screen_w, screen_h = _get_screen_resolution(device_id)
 
     if swipe_up:
-        # Swipe up from bottom center to middle
         start_x = screen_w // 2
         start_y = int(screen_h * 0.85)
         end_x = screen_w // 2
         end_y = int(screen_h * 0.3)
     else:
-        # Swipe from left to right
         start_x = int(screen_w * 0.2)
         start_y = screen_h // 2
         end_x = int(screen_w * 0.8)
@@ -468,13 +491,14 @@ def unlock_screen(device_id: str | None = None, swipe_up: bool = True) -> bool:
             "shell", "input", "swipe",
             str(start_x), str(start_y),
             str(end_x), str(end_y),
-            "300"
+            "300",
         ],
         capture_output=True,
     )
 
     time.sleep(0.5)
-    print("🔓 Unlock swipe performed")
+    if verbose:
+        print("🔓 Unlock swipe performed")
     return True
 
 
