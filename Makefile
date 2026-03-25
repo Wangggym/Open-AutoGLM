@@ -8,7 +8,7 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-.PHONY: gen install dev run test check fix lint clean help adb-info realtap realtap-exact root-firmware adb-tap-compare wake sleep unlock
+.PHONY: gen install dev run run-task run-task-close test check fix lint clean help adb-info realtap realtap-exact root-firmware adb-tap-compare wake sleep unlock
 
 name := "phone-agent"
 
@@ -34,9 +34,30 @@ dev:
 run:
 	$(HIDE)uv run python main.py
 
-# Run with specific task
+# Run with specific task (usage: make run-task TASK="打开微信" [CLOSE=1])
+# Note: do not pass -C to make; GNU make uses -C for --directory. Use CLOSE=1 or run-task-close.
 run-task:
-	$(HIDE)uv run python main.py --task "$(TASK)"
+ifndef TASK
+	@echo "❌ Usage: make run-task TASK=\"<task description>\""
+	@echo "   Example: make run-task TASK=\"帮我在钉钉上打卡\""
+	@echo "   Turn off screen when done: make run-task TASK=\"...\" CLOSE=1"
+	@echo "   Or: make run-task-close TASK=\"...\"   (same as CLOSE=1)"
+	@exit 1
+endif
+ifeq ($(CLOSE),1)
+	$(HIDE)uv run python main.py --close "$(TASK)"
+else
+	$(HIDE)uv run python main.py "$(TASK)"
+endif
+
+# Same as run-task but always passes main.py --close (-C is reserved by make, not passed to Python)
+run-task-close:
+ifndef TASK
+	@echo "❌ Usage: make run-task-close TASK=\"<task description>\""
+	@echo "   Do not run: make run-task ... -C   (make interprets -C as change-directory)"
+	@exit 1
+endif
+	$(HIDE)uv run python main.py --close "$(TASK)"
 
 # Check system requirements
 run-check:
@@ -227,7 +248,8 @@ help:
 	@echo "Development:"
 	@echo "  make dev            - Run in interactive mode"
 	@echo "  make run            - Run phone agent"
-	@echo "  make run-task TASK= - Run specific task"
+	@echo "  make run-task TASK=\"...\" [CLOSE=1] - Run one task"
+	@echo "  make run-task-close TASK=\"...\"      - Run one task, --close (do not use make -C)"
 	@echo "  make run-check      - Check system requirements"
 	@echo "  make test           - Run tests"
 	@echo "  make check          - Type checking and linting"
